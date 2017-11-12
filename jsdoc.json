@@ -1,0 +1,12 @@
+{
+    "docdash": {
+        "sort": true
+    },
+    "opts": {
+        "destination": "docs/",
+        "template": "node_modules/docdash"
+    },
+    "source": {
+        "include": "src"
+    }
+}

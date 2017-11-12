@@ -1,0 +1,37 @@
+{
+  "name": "pwnjs",
+  "version": "1.0.0",
+  "description": "Browser exploitation library.",
+  "main": "src/index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "docdash": "^0.4.0",
+    "jsdoc": "^3.5.5",
+    "patch-package": "^3.6.0",
+    "serve": "^6.4.1",
+    "uglifyjs-webpack-plugin": "^1.0.1",
+    "webpack": "^3.8.1",
+    "webpack-merge": "^4.1.1"
+  },
+  "scripts": {
+    "build": "webpack --config webpack.dev.js && webpack --config webpack.prod.js",
+    "jsdoc": "jsdoc -c jsdoc.json -R README.md",
+    "prepare": "patch-package",
+    "start": "webpack --config webpack.dev.js && serve",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theori-io/pwnjs.git"
+  },
+  "author": "Theori",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/theori-io/pwnjs/issues"
+  },
+  "homepage": "https://github.com/theori-io/pwnjs#readme"
+}

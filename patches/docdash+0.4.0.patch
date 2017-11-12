@@ -1,0 +1,12 @@
+patch-package
+--- a/node_modules/docdash/publish.js
++++ b/node_modules/docdash/publish.js
+@@ -302,7 +302,7 @@ function buildMemberNav(items, itemHeading, itemsSeen, linktoFn) {
+                 itemsNav += '<li>' + linktoFn('', item.name);
+                 itemsNav += '</li>';
+             } else if ( !hasOwnProp.call(itemsSeen, item.longname) ) {
+-                itemsNav += '<li>' + linktoFn(item.longname, item.name.replace(/^module:/, ''));
++                itemsNav += '<li>' + linktoFn(item.longname, item.longname);
+ 
+                 if (docdash.static && members.find(function (m) { return m.scope === 'static'; } )) {
+                     itemsNav += "<ul class='members'>";
