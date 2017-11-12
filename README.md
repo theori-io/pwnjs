@@ -2,7 +2,7 @@
 
 ## Basic Usage
 
-Pre-built version of the library is located at /dist/pwn.js. API documentation is available in /docs, and examples of complete exploits are in /examples.
+Pre-built version of the library is located at /dist/pwn.js. API documentation is available in /docs or [here](http://theori.io/pwnjs/), and examples of complete exploits are in /examples.
 
 If you want to implement a new Chakra exploit, you can use this basic template:
 
