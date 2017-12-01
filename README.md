@@ -1,5 +1,7 @@
 # pwn.js
 
+[![CDNJS](https://img.shields.io/cdnjs/v/pwnjs.svg)](https://cdnjs.com/libraries/pwnjs)
+
 ## Basic Usage
 
 Pre-built version of the library is located at /dist/pwn.js. API documentation is available in /docs or [here](http://theori.io/pwnjs/), and examples of complete exploits are in /examples.
