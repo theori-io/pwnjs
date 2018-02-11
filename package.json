@@ -1,6 +1,6 @@
 {
   "name": "pwnjs",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Browser exploitation library.",
   "main": "src/index.js",
   "directories": {
