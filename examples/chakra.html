@@ -13,8 +13,9 @@
             function log(s) { document.getElementById('content').innerHTML += s + '<br>'; }
 
             with (new Exploit()) {
-                log(chakraBase.toString(16));
-                log(importFunction('msvcrt.dll', 'malloc'));
+                log('Chakra: ' + chakraBase.toString(16));
+
+                log('malloc: ' + importFunction('msvcrt.dll', 'malloc'));
 
                 /* Thread example:
                 var thread = new Thread('./thread.js');

